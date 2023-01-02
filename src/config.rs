@@ -5,14 +5,21 @@ lazy_static::lazy_static! {
 }
 
 pub struct Config {
-    pub motions: HashMap<char, i32>,
+    pub motions: Vec<&'static str>,
 }
-
-// pub fn solid() {}
 
 impl Config {
     pub fn new() -> Self {
-        let motions = HashMap::from([('s', 1)]);
+        let motions = vec!["s", "t"];
+
         Self { motions }
+    }
+
+    pub fn execute(&self, key: &str) {
+        match key {
+            "s" => {}
+            "t" => {}
+            _ => {}
+        }
     }
 }
