@@ -1,19 +1,18 @@
-use x11rb::atom_manager;
-use x11rb::connection::{Connection as _, RequestConnection as _};
-use x11rb::errors::ReplyOrIdError;
-use x11rb::protocol::xkb::{self, ConnectionExt as _};
-use x11rb::protocol::xproto::{
-    self, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
-};
-use x11rb::protocol::Event;
-use x11rb::wrapper::ConnectionExt as _;
-use x11rb::xcb_ffi::XCBConnection;
+// use x11rb::atom_manager;
+// use x11rb::connection::{Connection as _, RequestConnection as _};
+// use x11rb::errors::ReplyOrIdError;
+// use x11rb::protocol::xkb::{self, ConnectionExt as _};
+// use x11rb::protocol::xproto::{
+//     self, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
+// };
+// use x11rb::protocol::Event;
+// use x11rb::wrapper::ConnectionExt as _;
+
+// use x11rb::xcb_ffi::XCBConnection;
 use xkbcommon::xkb as xkbc;
 
-mod config;
 mod utils;
 
-// use config::CONFIG;
 use utils::*;
 
 fn main() -> anyhow::Result<()> {
