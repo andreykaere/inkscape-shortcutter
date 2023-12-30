@@ -7,59 +7,52 @@
 // };
 // use x11rb::protocol::Event;
 // use x11rb::wrapper::ConnectionExt as _;
-
-// use x11rb::xcb_ffi::XCBConnection;
-use xkbcommon::xkb as xkbc;
+use std::sync;
+use std::thread;
+use std::time::Duration;
 
 mod utils;
 
 use utils::*;
 
 fn main() -> anyhow::Result<()> {
-    let (xcb_conn, screen_num) = xcb::Connection::connect(None)?;
-    let screen_num = usize::try_from(screen_num).unwrap();
-    // Now get us an x11rb connection using the same underlying libxcb connection
-    let conn = {
-        let raw_conn = xcb_conn.get_raw_conn().cast();
-        unsafe { XCBConnection::from_raw_xcb_connection(raw_conn, false) }
-    }?;
+    let (conn, screen_num) = x11rb::connect(None)?;
+    let mut inkscape_windows = get_inkscape_ids(&conn)?;
 
-    conn.prefetch_extension_information(xkb::X11_EXTENSION_NAME)?;
-    let xkb = conn.xkb_use_extension(1, 0)?;
-    let xkb = xkb.reply()?;
-    assert!(xkb.supported);
+    if inkscape_windows.is_empty() {
+        eprintln!("No Inkscape window was found, aborting ...");
+        std::process::exit(2);
+    };
 
-    let context = xkbc::Context::new(xkbc::CONTEXT_NO_FLAGS);
-    let device_id = xkbc::x11::get_core_keyboard_device_id(&xcb_conn);
-    let keymap = xkbc::x11::keymap_new_from_device(
-        &context,
-        &xcb_conn,
-        device_id,
-        xkbc::KEYMAP_COMPILE_NO_FLAGS,
-    );
-    let state = xkbc::x11::state_new_from_device(&keymap, &xcb_conn, device_id);
+    // let pool = rayon::ThreadPoolBuilder::new()
+    //     .num_threads(20)
+    //     .build()
+    //     .unwrap();
 
-    let screen = &conn.setup().roots[screen_num];
-
-    if let Some(inkscape_window) = get_inkscape_id(&conn, screen) {
+    for inkscape_window in &inkscape_windows {
         println!("Found inkscape window, its id is {inkscape_window}");
 
-        grab_keyboard(&conn, inkscape_window);
-        conn.flush()?;
-
-        loop {
-            let event = conn.wait_for_event()?;
-
-            match event {
-                Event::KeyPress(_) | Event::KeyRelease(_) => {
-                    filter_key(&conn, inkscape_window, event, &state)?;
-                }
-
-                _ => {}
-            };
-        }
-    } else {
-        println!("No Inkscape window was found, aborting ...");
-        Ok(())
+        let win = *inkscape_window;
+        thread::spawn(move || handle_inkscape_window(win).unwrap());
     }
+
+    // Watch for new inkscape windows
+    loop {
+        let new_inkscape_windows = get_inkscape_ids(&conn)?;
+
+        for window in &new_inkscape_windows {
+            if !inkscape_windows.contains(window) {
+                println!("New inkscape window, its id is {window}");
+
+                let win = *window;
+                thread::spawn(move || handle_inkscape_window(win).unwrap());
+
+                inkscape_windows.push(*window);
+            }
+        }
+
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    Ok(())
 }
