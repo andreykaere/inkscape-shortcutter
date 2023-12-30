@@ -1,39 +1,33 @@
-pub use x11rb::connection::Connection;
-pub use x11rb::properties::WmClass;
-pub use x11rb::protocol::xproto::*;
-pub use x11rb::protocol::Event;
-pub use x11rb::xcb_ffi::XCBConnection;
+use x11rb::connection::Connection;
+use x11rb::properties::WmClass;
+use x11rb::protocol::xproto::*;
+use x11rb::protocol::Event;
+use x11rb::xcb_ffi::XCBConnection;
 
-pub use x11rb::atom_manager;
-pub use x11rb::connection::RequestConnection as _;
-pub use x11rb::errors::ReplyOrIdError;
-pub use x11rb::protocol::xkb::{self, ConnectionExt as _};
-pub use x11rb::protocol::xproto::{
+use x11rb::atom_manager;
+use x11rb::connection::RequestConnection as _;
+use x11rb::errors::ReplyOrIdError;
+use x11rb::protocol::xkb::{self, ConnectionExt as _};
+use x11rb::protocol::xproto::{
     self, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
 };
-pub use x11rb::wrapper::ConnectionExt as _;
-pub use xkbcommon::xkb as xkbc;
+use x11rb::wrapper::ConnectionExt as _;
+use xkbcommon::xkb as xkbc;
+
+use std::sync::{self, Mutex};
+use std::thread;
+use std::time::Duration;
 
 fn is_window_valid<Conn: Connection>(conn: &Conn, window: Window) -> bool {
-    match conn.get_window_attributes(window_id).unwrap().reply() {
+    match conn.get_window_attributes(window).unwrap().reply() {
         Ok(_) => true,
         _ => false,
     }
 }
 
-fn get_wm_name<Conn: Connection>(
-    conn: &Conn,
-    window: Window,
-) -> anyhow::Result<String> {
+fn get_wm_name<Conn: Connection>(conn: &Conn, window: Window) -> anyhow::Result<String> {
     let property = if let Ok(property) = conn
-        .get_property(
-            false,
-            window,
-            AtomEnum::WM_NAME,
-            AtomEnum::STRING,
-            0,
-            1024,
-        )?
+        .get_property(false, window, AtomEnum::WM_NAME, AtomEnum::STRING, 0, 1024)?
         .reply()
     {
         property
@@ -49,14 +43,7 @@ fn get_wm_instance_class<Conn: Connection>(
     window: Window,
 ) -> anyhow::Result<(String, String)> {
     let property = if let Ok(property) = conn
-        .get_property(
-            false,
-            window,
-            AtomEnum::WM_CLASS,
-            AtomEnum::STRING,
-            0,
-            1024,
-        )?
+        .get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 1024)?
         .reply()
     {
         property
@@ -85,9 +72,7 @@ fn get_wm_instance_class<Conn: Connection>(
     Ok((wm_instance, wm_class))
 }
 
-pub fn get_inkscape_ids<Conn: Connection>(
-    conn: &Conn,
-) -> anyhow::Result<Vec<Window>> {
+pub fn get_inkscape_ids<Conn: Connection>(conn: &Conn) -> anyhow::Result<Vec<Window>> {
     let screen = &conn.setup().roots[0];
     let all_windows = conn.query_tree(screen.root)?.reply()?.children;
     let mut inkscape_ids = Vec::new();
@@ -96,11 +81,10 @@ pub fn get_inkscape_ids<Conn: Connection>(
         let (wm_instance, wm_class) = get_wm_instance_class(conn, window)?;
         let wm_name = get_wm_name(conn, window)?;
 
-        #[rustfmt::skip]
-        if (wm_instance.as_str(), wm_class.as_str())
-            == ("org.inkscape.Inkscape", "Inkscape")
-            && wm_name != "org.inkscape.Inkscape" // to avoid detecting pop-up 
-                                                  // windows inkscape
+        // Checking `wm_name` is needed to avoid detecting pop-up windows in
+        // inkscape
+        if (wm_instance.as_str(), wm_class.as_str()) == ("org.inkscape.Inkscape", "Inkscape")
+            && wm_name != "org.inkscape.Inkscape"
         {
             inkscape_ids.push(window);
         }
@@ -170,7 +154,10 @@ pub fn filter_key<Conn: Connection>(
     Ok(())
 }
 
-fn handle_inkscape_window(inkscape_window: Window) -> anyhow::Result<()> {
+pub fn handle_inkscape_window(
+    inkscape_window: Window,
+    inkscape_windows: sync::Arc<Mutex<Vec<Window>>>,
+) -> anyhow::Result<()> {
     let (xcb_conn, screen_num) = xcb::Connection::connect(None)?;
     let screen_num = usize::try_from(screen_num)?;
     // Now get us an x11rb connection using the same underlying libxcb connection
@@ -194,20 +181,30 @@ fn handle_inkscape_window(inkscape_window: Window) -> anyhow::Result<()> {
     );
     let state = xkbc::x11::state_new_from_device(&keymap, &xcb_conn, device_id);
 
+    grab_keyboard(&conn, inkscape_window);
+    conn.flush()?;
+
+    while is_window_valid(&conn, inkscape_window) {
+        // println!("foo {inkscape_window}");
+
+        let event = if let Some(event) = conn.poll_for_event()? {
+            event
+        } else {
+            continue;
+        };
+
+        match event {
+            Event::KeyPress(_) | Event::KeyRelease(_) => {
+                filter_key(&conn, inkscape_window, event, &state)?;
+            }
+
+            _ => {}
+        }
+
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    println!("bye {inkscape_window}");
+
     Ok(())
-
-    // grab_keyboard(&conn, inkscape_window);
-    // conn.flush()?;
-
-    // loop {
-    //     let event = conn.wait_for_event()?;
-
-    //     match event {
-    //         Event::KeyPress(_) | Event::KeyRelease(_) => {
-    //             filter_key(&conn, inkscape_window, event, &state)?;
-    //         }
-
-    //         _ => {}
-    //     };
-    // }
 }
