@@ -1,16 +1,11 @@
 use x11rb::connection::Connection;
-use x11rb::properties::WmClass;
 use x11rb::protocol::xproto::*;
 use x11rb::protocol::Event;
 use x11rb::xcb_ffi::XCBConnection;
 
-use x11rb::atom_manager;
 use x11rb::connection::RequestConnection as _;
-use x11rb::errors::ReplyOrIdError;
 use x11rb::protocol::xkb::{self, ConnectionExt as _};
-use x11rb::protocol::xproto::{
-    self, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
-};
+use x11rb::protocol::xproto::EventMask;
 use x11rb::wrapper::ConnectionExt as _;
 use xkbcommon::xkb as xkbc;
 
@@ -190,6 +185,7 @@ pub fn handle_inkscape_window(
         let event = if let Some(event) = conn.poll_for_event()? {
             event
         } else {
+            thread::sleep(Duration::from_millis(100));
             continue;
         };
 
@@ -200,11 +196,12 @@ pub fn handle_inkscape_window(
 
             _ => {}
         }
-
-        thread::sleep(Duration::from_millis(100));
     }
 
-    println!("bye {inkscape_window}");
+    // println!("bye {inkscape_window}");
+
+    let mut inkscape_windows_lock = inkscape_windows.lock().unwrap();
+    inkscape_windows_lock.retain(|&x| x != inkscape_window);
 
     Ok(())
 }
