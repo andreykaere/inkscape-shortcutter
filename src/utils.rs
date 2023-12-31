@@ -30,7 +30,7 @@ fn get_wm_name<Conn: Connection>(conn: &Conn, window: Window) -> anyhow::Result<
         return Ok(String::new());
     };
 
-    Ok(String::from_utf8(property.value)?)
+    Ok(String::from_utf8_lossy(&property.value).to_string())
 }
 
 fn get_wm_instance_class<Conn: Connection>(
@@ -53,13 +53,13 @@ fn get_wm_instance_class<Conn: Connection>(
     let wm_class_opt = iter.next();
 
     let wm_instance = if let Some(bytes) = wm_instance_opt {
-        String::from_utf8(bytes.to_vec())?
+        String::from_utf8_lossy(bytes).to_string()
     } else {
         String::new()
     };
 
     let wm_class = if let Some(bytes) = wm_class_opt {
-        String::from_utf8(bytes.to_vec())?
+        String::from_utf8_lossy(bytes).to_string()
     } else {
         String::new()
     };
@@ -101,7 +101,9 @@ pub fn grab_keyboard<Conn: Connection>(conn: &Conn, window: Window) {
 }
 
 pub fn key_to_char(key: u8, state: &xkbc::State) -> String {
-    // let sym = state.key_get_one_sym(key.into());
+    let sym = state.key_get_consumed_mods(key.into());
+
+    println!("sym: {:?}", sym);
 
     state.key_get_utf8(key.into())
 }
@@ -185,7 +187,7 @@ pub fn handle_inkscape_window(
         let event = if let Some(event) = conn.poll_for_event()? {
             event
         } else {
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
             continue;
         };
 

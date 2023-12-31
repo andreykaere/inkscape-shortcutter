@@ -9,10 +9,10 @@ fn main() -> anyhow::Result<()> {
     let (conn, _) = x11rb::connect(None)?;
     let inkscape_windows = Arc::new(Mutex::new(vec![]));
 
-    // let pool = rayon::ThreadPoolBuilder::new()
-    //     .num_threads(20)
-    //     .build()
-    //     .unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(10)
+        .build()
+        .unwrap();
 
     loop {
         let new_inkscape_windows = get_inkscape_ids(&conn)?;
@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
 
                 let win = *window;
                 let ink_windows = Arc::clone(&inkscape_windows);
-                thread::spawn(move || handle_inkscape_window(win, ink_windows).unwrap());
+                pool.spawn(move || handle_inkscape_window(win, ink_windows).unwrap());
 
                 inkscape_windows_lock.push(*window);
             }
