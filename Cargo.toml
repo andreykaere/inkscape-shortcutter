@@ -12,3 +12,5 @@ x11rb = { version = "0.13", features = ["allow-unsafe-code", "xkb"] }
 xcb = {version = "1.3.0", features = ["as-raw-xcb-connection"] }
 anyhow = "1.0.77"
 rayon = "1.8.0"
+tempfile = "3.9.0"
+mktemp = "0.5.1"
