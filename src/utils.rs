@@ -6,8 +6,9 @@ use x11rb::xcb_ffi::XCBConnection;
 use x11rb::connection::RequestConnection as _;
 use x11rb::protocol::xkb::{self, ConnectionExt as _, PerClientFlag};
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, EventMask, Grab, GrabMode, ModMask, Window,
+    self, AtomEnum, ConnectionExt as _, EventMask, Grab, GrabMode, ModMask, Window,
 };
+use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 use xkbcommon::xkb as xkbc;
 
@@ -223,46 +224,89 @@ pub fn execute_command(combination: &HashSet<String>) -> anyhow::Result<()> {
 pub fn filter_key<Conn: Connection>(
     conn: &Conn,
     window: Window,
-    event: Event,
+    raw_event: Event,
     state: &xkbc::State,
+    device_id: u8,
     buffer: &mut HashSet<String>,
 ) -> anyhow::Result<()> {
-    let key = match event {
-        Event::KeyPress(e) | Event::KeyRelease(e) => e.detail,
+    let event = match raw_event {
+        Event::KeyPress(e) | Event::KeyRelease(e) => e,
         _ => {
             return Ok(());
         }
     };
 
+    let (conn_, screen_num) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen_num].root;
+
+    let reply = conn.query_extension("XTEST".as_bytes())?.reply()?;
+
+    println!("{:?}", reply.present);
+
+    let key = event.detail;
     // let letter: &str = &key_to_char(key, state);
     // let letter = key_to_char(key, state);
     let letter = state.key_get_utf8(key.into());
 
     println!("{}, {}", key, letter);
 
-    if let Event::KeyPress(e) = event {
-        println!("state: {:?}", e.state);
-        // let foo: u32 = xproto::ModMask::SHIFT.into();
-        // println!("{:?}", foo != 0);
-        // println!("{:?}", xproto::ModMask::CONTROL as u32 != 0);
-        // if execute_command(&letter).is_err() {
-        println!("I pressed {letter}");
-
-        // conn.send_event(false, window, EventMask::NO_EVENT, e)?;
-
-        buffer.insert(letter.clone());
+    if let Event::KeyPress(event) = raw_event {
+        conn.xtest_fake_input(
+            // event.response_type,
+            xproto::KEY_PRESS_EVENT,
+            event.detail,
+            x11rb::CURRENT_TIME,
+            // 71303175,
+            root,
+            event.root_x,
+            event.root_y,
+            // 0,
+            // 0,
+            device_id,
+        );
     }
 
-    if let Event::KeyRelease(e) = event {
-        println!("I released {letter}");
-        // conn.send_event(false, window, EventMask::NO_EVENT, e)?;
-
-        // buffer.remove(&letter);
-        println!("Buffer is: {:?}", buffer);
-        execute_command(buffer);
-
-        buffer.clear();
+    if let Event::KeyRelease(event) = raw_event {
+        conn.xtest_fake_input(
+            // event.response_type,
+            xproto::KEY_RELEASE_EVENT,
+            event.detail,
+            x11rb::CURRENT_TIME,
+            // 71303175,
+            root,
+            event.root_x,
+            event.root_y,
+            // 0,
+            // 0,
+            device_id,
+        );
     }
+
+    // {
+    //     if let Event::KeyPress(e) = event {
+    //         println!("state: {:?}", e.state);
+    //         // let foo: u32 = xproto::ModMask::SHIFT.into();
+    //         // println!("{:?}", foo != 0);
+    //         // println!("{:?}", xproto::ModMask::CONTROL as u32 != 0);
+    //         // if execute_command(&letter).is_err() {
+    //         println!("I pressed {letter}");
+
+    //         // conn.send_event(false, window, EventMask::NO_EVENT, e)?;
+
+    //         buffer.insert(letter.clone());
+    //     }
+
+    //     if let Event::KeyRelease(e) = event {
+    //         println!("I released {letter}");
+    //         // conn.send_event(false, window, EventMask::NO_EVENT, e)?;
+
+    //         // buffer.remove(&letter);
+    //         println!("Buffer is: {:?}", buffer);
+    //         execute_command(buffer);
+
+    //         buffer.clear();
+    //     }
+    // }
 
     conn.flush()?;
     conn.sync()?;
@@ -332,7 +376,14 @@ pub fn handle_inkscape_window(
 
         match event {
             Event::KeyPress(_) | Event::KeyRelease(_) => {
-                filter_key(&conn, inkscape_window, event, &state, &mut buffer)?;
+                filter_key(
+                    &conn,
+                    inkscape_window,
+                    event,
+                    &state,
+                    device_id as u8,
+                    &mut buffer,
+                )?;
             }
 
             _ => {}
