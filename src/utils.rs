@@ -170,7 +170,7 @@ pub fn parse_combination(string: &str) -> HashSet<String> {
     // HashSet::from(string.split('+').map(|x| x.to_string()).collect::Vec<_>().into())
 }
 
-pub fn open_editor(filename: &str) {
+pub fn open_editor() -> anyhow::Result<()> {
     Command::new("alacritty")
         .args([
             "msg",
@@ -183,7 +183,10 @@ pub fn open_editor(filename: &str) {
             "~/.minimal-tex-vimrc",
             // filename,
         ])
-        .spawn();
+        .spawn()?;
+
+    Ok(())
+
     // Command::new("urxvt")
     //     .args([
     //         "-name",
@@ -207,9 +210,10 @@ pub fn open_editor(filename: &str) {
 pub fn execute_command(combination: &HashSet<String>) -> anyhow::Result<()> {
     if combination == &parse_combination("t") {
         println!("hello!");
-        let file = Temp::new_file()?.to_path_buf();
-        let filename = file.to_str().unwrap();
-        open_editor(&filename);
+        // let file = Temp::new_file()?.to_path_buf();
+        // let filename = file.to_str().unwrap();
+        // open_editor(&filename)?;
+        open_editor()?;
     }
     if combination == &parse_combination("a+s") {
         todo!();
@@ -223,25 +227,25 @@ pub fn execute_command(combination: &HashSet<String>) -> anyhow::Result<()> {
 pub fn filter_key<Conn: Connection>(
     conn: &Conn,
     window: Window,
-    event: Event,
+    raw_event: Event,
     state: &xkbc::State,
+    device_id: u8,
     buffer: &mut HashSet<String>,
 ) -> anyhow::Result<()> {
-    let key = match event {
-        Event::KeyPress(e) | Event::KeyRelease(e) => e.detail,
+    let event = match raw_event {
+        Event::KeyPress(e) | Event::KeyRelease(e) => e,
         _ => {
             return Ok(());
         }
     };
 
+    let key = event.detail;
     // let letter: &str = &key_to_char(key, state);
     // let letter = key_to_char(key, state);
     let letter = state.key_get_utf8(key.into());
 
-    println!("{}, {}", key, letter);
-
-    if let Event::KeyPress(e) = event {
-        println!("state: {:?}", e.state);
+    if let Event::KeyPress(event) = raw_event {
+        println!("state: {:?}", event.state);
         // let foo: u32 = xproto::ModMask::SHIFT.into();
         // println!("{:?}", foo != 0);
         // println!("{:?}", xproto::ModMask::CONTROL as u32 != 0);
@@ -253,13 +257,13 @@ pub fn filter_key<Conn: Connection>(
         buffer.insert(letter.clone());
     }
 
-    if let Event::KeyRelease(e) = event {
+    if let Event::KeyRelease(event) = raw_event {
         println!("I released {letter}");
         // conn.send_event(false, window, EventMask::NO_EVENT, e)?;
 
         // buffer.remove(&letter);
         println!("Buffer is: {:?}", buffer);
-        execute_command(buffer);
+        execute_command(buffer)?;
 
         buffer.clear();
     }
@@ -332,7 +336,14 @@ pub fn handle_inkscape_window(
 
         match event {
             Event::KeyPress(_) | Event::KeyRelease(_) => {
-                filter_key(&conn, inkscape_window, event, &state, &mut buffer)?;
+                filter_key(
+                    &conn,
+                    inkscape_window,
+                    event,
+                    &state,
+                    device_id as u8,
+                    &mut buffer,
+                )?;
             }
 
             _ => {}
