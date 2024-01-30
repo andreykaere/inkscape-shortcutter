@@ -275,8 +275,8 @@ pub fn filter_key<Conn: Connection>(
 }
 
 pub fn handle_inkscape_window(
-    inkscape_window: Window,
-    inkscape_windows: sync::Arc<Mutex<Vec<Window>>>,
+    ink_win: Window,
+    cache: sync::Arc<Mutex<HashSet<Window>>>,
 ) -> anyhow::Result<()> {
     let (xcb_conn, screen_num) = xcb::Connection::connect(None)?;
     let screen_num = usize::try_from(screen_num)?;
@@ -312,7 +312,7 @@ pub fn handle_inkscape_window(
 
     conn.grab_key(
         false,
-        inkscape_window,
+        ink_win,
         ModMask::ANY,
         Grab::ANY,
         GrabMode::ASYNC,
@@ -324,7 +324,7 @@ pub fn handle_inkscape_window(
     // untill the release happens
     let mut buffer = HashSet::new();
 
-    while is_window_valid(&conn, inkscape_window) {
+    while is_window_valid(&conn, ink_win) {
         // println!("foo {inkscape_window}");
 
         let event = if let Some(event) = conn.poll_for_event()? {
@@ -336,14 +336,7 @@ pub fn handle_inkscape_window(
 
         match event {
             Event::KeyPress(_) | Event::KeyRelease(_) => {
-                filter_key(
-                    &conn,
-                    inkscape_window,
-                    event,
-                    &state,
-                    device_id as u8,
-                    &mut buffer,
-                )?;
+                filter_key(&conn, ink_win, event, &state, device_id as u8, &mut buffer)?;
             }
 
             _ => {}
@@ -352,8 +345,8 @@ pub fn handle_inkscape_window(
 
     // println!("bye {inkscape_window}");
 
-    let mut inkscape_windows_lock = inkscape_windows.lock().unwrap();
-    inkscape_windows_lock.retain(|&x| x != inkscape_window);
+    let mut ink_winds = cache.lock().unwrap();
+    ink_winds.remove(&ink_win);
 
     Ok(())
 }
